@@ -3,12 +3,8 @@ using System.Net.Http.Headers;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using OpenQA.Selenium;
-using OpenQA.Selenium.Chrome;
 using Mscc.GenerativeAI;
-using OpenQA.Selenium.Support.UI;
 using ReadMeGenie.Data;
-using System.Text.RegularExpressions;
 
 namespace ReadMeGenie.Controllers
 {
@@ -17,8 +13,8 @@ namespace ReadMeGenie.Controllers
     public class RunController : ControllerBase
     {
         private readonly HttpClient _httpClient;
-        private readonly string gitUrl = "https://api.github.com";
-        private readonly string gitToken = "";  // add your token
+        private readonly string gitUrl = "";
+        private readonly string gitToken = "";
         private static readonly List<string> supportedExtensions = new List<string>
         {
             "html", "css", "js", "jsx", "ts", "py", "rb", "java", "kt", "swift",
@@ -37,7 +33,7 @@ namespace ReadMeGenie.Controllers
             new ModuleManagement("", "", "assets")
         };
 
-        private readonly string GeminiToken = ""; // add your token
+        private readonly string GeminiToken = "AIzaSyD-QSmxChdGnNUbQQMFcktpRSj26YZsgNI";
 
         public RunController(HttpClient httpClient)
         {
@@ -47,6 +43,7 @@ namespace ReadMeGenie.Controllers
         [HttpPost]
         public async Task<IActionResult> Run([FromBody] Request request)
         {
+
             string instruction;
             bool userExists = await CheckUserAsync(request.User);
             if (!userExists)
@@ -54,22 +51,26 @@ namespace ReadMeGenie.Controllers
                 return NotFound("User not found");
             }
 
+
             bool repoExist = await CheckRepo(request.User, request.Name);
             if (!repoExist)
             {
                 return NotFound("Repository not found");
             }
 
+
             var files = await ListFilesAsync(request.User, request.Name, "");
             if (request.Type == "ReadMe")
             {
-                instruction = "Write A Readme for the code. The Readme should include a brief" +
-               "summary of the code (including structures, features), the tech stack " +
+                instruction = "Write A really lengthy Readme for the code. The Readme should include a briefly summary " +
+               "summary of the code (including structures, explain every technical and non technical features), the tech stack " +
                "(Languages, Frameworks, Technologies), information about how to install dependencies, " +
                "how to run the project locally, any configuration settings that need to be adjusted, instructions for testing, contributing guidelines, and licensing information. Make sure the format doesn't have any errors, especially the installation part.";
             }
             else if (request.Type.Substring(0, 1).Equals('B'))
+
             {
+                Console.WriteLine("lol");
                 instruction = $"Explain the code in {int.Parse(request.Type[1].ToString())} bullet points to write on resume and an extra line explaining the tech stack";
             }
             else
@@ -79,21 +80,16 @@ namespace ReadMeGenie.Controllers
 
             string resultText;
 
-            using (var driver = new ChromeDriver())
+
+            var buttonText = GetButtonText(files);
+            // return Ok(buttonText);
+            if (buttonText == "Prompt is shorter than split length")
             {
-                driver.Navigate().GoToUrl("https://chatgpt-prompt-splitter.jjdiaz.dev/");
-                await ConfigurePageForPromptSplit(driver, files);
-
-                var buttonText = await GetButtonText(driver, "#split-btn");
-
-                if (buttonText == "Prompt is shorter than split length")
-                {
-                    resultText = await GenerateContent(files, instruction);
-                }
-                else
-                {
-                    resultText = await GenerateAndCombineContent(files, buttonText, instruction);
-                }
+                resultText = await GenerateContent(files, instruction);
+            }
+            else
+            {
+                resultText = await GenerateAndCombineContent(files, buttonText, instruction);
             }
 
             return Ok(resultText);
@@ -131,8 +127,7 @@ namespace ReadMeGenie.Controllers
             }
         }
 
-        [HttpGet]
-        public async Task<List<FileContent>> ListFilesAsync(string username, string repo, string defaultPath = "")
+        private async Task<List<FileContent>> ListFilesAsync(string username, string repo, string defaultPath = "")
         {
             var files = await FetchFilesAsync(username, repo, defaultPath);
             var result = new List<FileContent>();
@@ -216,33 +211,17 @@ namespace ReadMeGenie.Controllers
             return null;
         }
 
-        private async Task ConfigurePageForPromptSplit(IWebDriver driver, List<FileContent> files)
+
+        private static string GetButtonText(List<FileContent> files)
         {
-            WebDriverWait wait = new WebDriverWait(driver, TimeSpan.FromSeconds(10));
-            var selectElement = wait.Until(drv => drv.FindElement(By.CssSelector("#preset")));
+            // Calculate the total content length and return button text based on it
+            int totalLength = files.Sum(f => f.Content.Length);
+            if (totalLength < 75000)
+            {
+                return "Prompt is shorter than split length";
+            }
 
-            var select = new SelectElement(selectElement);
-            select.SelectByText("Custom");
-
-            var inputElement = wait.Until(drv => drv.FindElement(By.Id("split_length")));
-            inputElement.Clear();
-            inputElement.SendKeys("75000");
-
-            var promptElement = wait.Until(drv => drv.FindElement(By.Id("prompt")));
-
-            IJavaScriptExecutor jsExecutor = (IJavaScriptExecutor)driver;
-            jsExecutor.ExecuteScript("document.querySelector('#prompt').value = arguments[0];", JsonConvert.SerializeObject(files));
-
-            promptElement.SendKeys(" ");
-            await Task.Delay(10000);
-
-        }
-
-        private async Task<string> GetButtonText(IWebDriver driver, string selector)
-        {
-            var element = driver.FindElement(By.CssSelector(selector));
-
-            return element.Text.Trim();
+            return totalLength.ToString();
         }
 
         private async Task<String> GenerateContent(List<FileContent> files, string instruction)
@@ -268,8 +247,6 @@ namespace ReadMeGenie.Controllers
 
             return response;
 
-
-
         }
 
         private async Task<string> GenerateContentFromModel(string contentString, string token)
@@ -290,33 +267,33 @@ namespace ReadMeGenie.Controllers
             }
         }
 
-        public async Task<String> GenerateAndCombineContent(List<FileContent> files, string buttonText, string instruction)
+        private async Task<string> GenerateAndCombineContent(List<FileContent> files, string buttonText, string instruction)
         {
 
-            string split_instruction = "write a short summary like in 200 words summary of code and the languages used here.";
+            string split_instruction = "write a short summary summary of code and the languages used here.";
             string finalInstruction =
                 "Here are the snippets of different parts of the code." + instruction;
 
-            int numParts = int.Parse(Regex.Match(buttonText, @"\d+").Value);
+            int numParts = (int.Parse(buttonText) / 74000) + 1;
 
             var combinedContent = string.Join("", files.Select(file =>
                 JsonConvert.SerializeObject(file.Name) + JsonConvert.SerializeObject(file.Content) + "\n"));
 
             var splitParts = SplitCode(combinedContent, numParts);
             var combineResult = new StringBuilder();
+
             foreach (var part in splitParts)
             {
                 try
                 {
                     var result = await GenerateContentFromModel(part + split_instruction, GeminiToken);
                     combineResult.Append(result);
-                    Task.Delay(3000).Wait();
+                    System.Threading.Thread.Sleep(10000);
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Error processing item: {ex.Message}");
                 }
-                await Task.Delay(TimeSpan.FromSeconds(10));
             }
 
             string finalPrompt = combineResult.ToString() + finalInstruction;
@@ -326,21 +303,16 @@ namespace ReadMeGenie.Controllers
 
 
         private List<string> SplitCode(string s, int n)
-        {
-            int partLength = s.Length / n;
-            int remainder = s.Length % n;
 
-            var parts = new List<string>(n);
+        {
+            int maxLength = 74000;
+            var parts = new List<string>();
             int start = 0;
 
-            for (int i = 0; i < n; i++)
+            while (start < s.Length)
             {
-                int length = partLength + (i < remainder ? 1 : 0);
-                if (start + length > s.Length)
-                {
-                    length = s.Length - start;
-                }
-
+       
+                int length = Math.Min(maxLength, s.Length - start);
                 parts.Add(s.Substring(start, length));
                 start += length;
             }
