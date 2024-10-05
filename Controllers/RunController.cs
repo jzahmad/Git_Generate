@@ -33,7 +33,7 @@ namespace ReadMeGenie.Controllers
             new ModuleManagement("", "", "assets")
         };
 
-        private readonly string GeminiToken = "AIzaSyD-QSmxChdGnNUbQQMFcktpRSj26YZsgNI";
+        private readonly string GeminiToken = "";
 
         public RunController(HttpClient httpClient)
         {
